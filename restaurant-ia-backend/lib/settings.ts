@@ -1,37 +1,59 @@
-// Same in-memory caveat as store.ts / conversations.ts — fine for a single
-// instance prototype, swap for a database row before going to production
-// with real traffic across multiple server instances.
+import { supabase, DEFAULT_RESTAURANT_ID } from "./supabaseClient";
+
+// Remplace l'ancien état en mémoire (variables globales, perdues à chaque
+// redémarrage / entre instances serverless) par la table `settings`.
 
 export type AnswerMode = "immediate" | "delayed";
 
-let agentOn = true;
-let answerMode: AnswerMode = "immediate";
-let ringDelaySeconds = 15; // used only when answerMode === "delayed"
+export type Settings = {
+  agentOn: boolean;
+  answerMode: AnswerMode;
+  ringDelaySeconds: number;
+};
 
-export function getAgentOn(): boolean {
-  return agentOn;
+export async function getSettings(): Promise<Settings> {
+  const { data, error } = await supabase
+    .from("settings")
+    .select("agent_enabled, answer_mode, ring_delay_seconds")
+    .eq("restaurant_id", DEFAULT_RESTAURANT_ID)
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Impossible de charger les réglages : ${error?.message ?? "introuvable"}`);
+  }
+
+  return {
+    agentOn: data.agent_enabled,
+    answerMode: data.answer_mode as AnswerMode,
+    ringDelaySeconds: data.ring_delay_seconds,
+  };
 }
 
-export function setAgentOn(value: boolean): boolean {
-  agentOn = value;
-  return agentOn;
+export async function getAgentOn(): Promise<boolean> {
+  return (await getSettings()).agentOn;
 }
 
-export function getAnswerMode(): AnswerMode {
-  return answerMode;
+export async function setAgentOn(value: boolean): Promise<boolean> {
+  await supabase.from("settings").update({ agent_enabled: value }).eq("restaurant_id", DEFAULT_RESTAURANT_ID);
+  return value;
 }
 
-export function setAnswerMode(value: AnswerMode): AnswerMode {
-  answerMode = value;
-  return answerMode;
+export async function getAnswerMode(): Promise<AnswerMode> {
+  return (await getSettings()).answerMode;
 }
 
-export function getRingDelaySeconds(): number {
-  return ringDelaySeconds;
+export async function setAnswerMode(value: AnswerMode): Promise<AnswerMode> {
+  await supabase.from("settings").update({ answer_mode: value }).eq("restaurant_id", DEFAULT_RESTAURANT_ID);
+  return value;
 }
 
-export function setRingDelaySeconds(value: number): number {
-  // garde-fou : entre 5 et 45 secondes, pour éviter un réglage absurde
-  ringDelaySeconds = Math.max(5, Math.min(45, Math.round(value)));
-  return ringDelaySeconds;
+export async function getRingDelaySeconds(): Promise<number> {
+  return (await getSettings()).ringDelaySeconds;
+}
+
+export async function setRingDelaySeconds(value: number): Promise<number> {
+  // garde-fou : entre 5 et 45 secondes, pour éviter un réglage absurde (comportement identique à avant)
+  const clamped = Math.max(5, Math.min(45, Math.round(value)));
+  await supabase.from("settings").update({ ring_delay_seconds: clamped }).eq("restaurant_id", DEFAULT_RESTAURANT_ID);
+  return clamped;
 }

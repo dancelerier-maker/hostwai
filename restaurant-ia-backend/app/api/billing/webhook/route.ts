@@ -26,11 +26,11 @@ export async function POST(req: NextRequest) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
       const plan = (session.metadata?.plan as PlanId) || "starter";
-      setSubscriptionActive(true, plan);
+      await setSubscriptionActive(true, plan);
       break;
     }
     case "customer.subscription.deleted":
-      setSubscriptionActive(false);
+      await setSubscriptionActive(false);
       break;
     default:
       break;

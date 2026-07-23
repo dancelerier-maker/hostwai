@@ -9,11 +9,13 @@ import {
   AnswerMode,
 } from "@/lib/settings";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   return NextResponse.json({
-    agentOn: getAgentOn(),
-    answerMode: getAnswerMode(),
-    ringDelaySeconds: getRingDelaySeconds(),
+    agentOn: await getAgentOn(),
+    answerMode: await getAnswerMode(),
+    ringDelaySeconds: await getRingDelaySeconds(),
   });
 }
 
@@ -21,20 +23,20 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
 
   if (typeof body.agentOn === "boolean") {
-    setAgentOn(body.agentOn);
+    await setAgentOn(body.agentOn);
   }
 
   if (body.answerMode === "immediate" || body.answerMode === "delayed") {
-    setAnswerMode(body.answerMode as AnswerMode);
+    await setAnswerMode(body.answerMode as AnswerMode);
   }
 
   if (typeof body.ringDelaySeconds === "number") {
-    setRingDelaySeconds(body.ringDelaySeconds);
+    await setRingDelaySeconds(body.ringDelaySeconds);
   }
 
   return NextResponse.json({
-    agentOn: getAgentOn(),
-    answerMode: getAnswerMode(),
-    ringDelaySeconds: getRingDelaySeconds(),
+    agentOn: await getAgentOn(),
+    answerMode: await getAnswerMode(),
+    ringDelaySeconds: await getRingDelaySeconds(),
   });
 }

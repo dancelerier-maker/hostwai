@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { restaurantProfile } from "@/lib/restaurant";
+import { getRestaurantProfile } from "@/lib/restaurant";
 import { appendTurn, clearConversation } from "@/lib/conversations";
 import { gatherAndSay, sayAndHangup, sayAndTransfer } from "@/lib/twiml";
 import { logCall } from "@/lib/store";
@@ -13,9 +13,12 @@ export async function POST(req: NextRequest) {
   const callSid = String(form.get("CallSid") || "");
   const from = String(form.get("From") || "unknown");
 
+  const restaurantProfile = await getRestaurantProfile();
+
   // Essai gratuit épuisé et pas d'abonnement actif -> on ne laisse pas l'IA répondre.
-  if (!getBillingStatus().hasAccess) {
-    logCall({ callSid, from, startedAt: new Date().toISOString(), turns: 0, transferred: !!restaurantProfile.staffPhoneNumber });
+  const billing = await getBillingStatus();
+  if (!billing.hasAccess) {
+    await logCall({ callSid, from, startedAt: new Date().toISOString(), turns: 0, transferred: !!restaurantProfile.staffPhoneNumber });
     if (restaurantProfile.staffPhoneNumber) {
       const twiml = sayAndTransfer("Un instant, je vous transfère.", restaurantProfile.staffPhoneNumber);
       return new NextResponse(twiml, { headers: { "Content-Type": "text/xml" } });
@@ -25,8 +28,8 @@ export async function POST(req: NextRequest) {
   }
 
   // The ON/OFF switch in the dashboard is checked right here, on every call.
-  if (!getAgentOn()) {
-    logCall({ callSid, from, startedAt: new Date().toISOString(), turns: 0, transferred: !!restaurantProfile.staffPhoneNumber });
+  if (!(await getAgentOn())) {
+    await logCall({ callSid, from, startedAt: new Date().toISOString(), turns: 0, transferred: !!restaurantProfile.staffPhoneNumber });
     if (restaurantProfile.staffPhoneNumber) {
       const twiml = sayAndTransfer("Un instant, je vous transfère.", restaurantProfile.staffPhoneNumber);
       return new NextResponse(twiml, { headers: { "Content-Type": "text/xml" } });
@@ -35,18 +38,18 @@ export async function POST(req: NextRequest) {
     return new NextResponse(twiml, { headers: { "Content-Type": "text/xml" } });
   }
 
-  clearConversation(callSid);
+  await clearConversation(callSid);
 
   const greeting = `Bonjour, ${restaurantProfile.name}, comment puis-je vous aider ?`;
-  appendTurn(callSid, { role: "assistant", content: greeting });
+  await appendTurn(callSid, { role: "assistant", content: greeting });
 
-  logCall({ callSid, from, startedAt: new Date().toISOString(), turns: 1, transferred: false });
+  await logCall({ callSid, from, startedAt: new Date().toISOString(), turns: 1, transferred: false });
 
   const twiml = gatherAndSay(
     greeting,
     "/api/voice/respond",
     "fr-FR",
-    getAnswerMode() === "delayed" ? getRingDelaySeconds() : 0
+    (await getAnswerMode()) === "delayed" ? await getRingDelaySeconds() : 0
   );
   return new NextResponse(twiml, { headers: { "Content-Type": "text/xml" } });
 }

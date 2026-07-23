@@ -1,20 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { restaurantProfile } from "./restaurant";
 import { listReservations } from "./store";
+import type { RestaurantProfile } from "./restaurant";
 import type { Turn } from "./conversations";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-function buildSystemPrompt(): string {
-  const reservations = listReservations();
+function buildSystemPrompt(profile: RestaurantProfile, reservations: Awaited<ReturnType<typeof listReservations>>): string {
   const list = reservations.length
     ? reservations.map((r) => `- ${r.name}, ${r.people} pers., ${r.time}`).join("\n")
     : "Aucune réservation pour l'instant.";
 
-  return `Tu es la réceptionniste IA téléphonique du restaurant "${restaurantProfile.name}".
-Horaires : ${restaurantProfile.hours}
-Langues parlées : ${restaurantProfile.languages}
-Infos utiles : ${restaurantProfile.highlights}
+  return `Tu es la réceptionniste IA téléphonique du restaurant "${profile.name}".
+Horaires : ${profile.hours}
+Langues parlées : ${profile.languages}
+Infos utiles : ${profile.highlights}
 
 Réservations déjà enregistrées ce soir :
 ${list}
@@ -38,11 +37,13 @@ export type AgentReply = {
   transfer: boolean;
 };
 
-export async function getAgentReply(history: Turn[]): Promise<AgentReply> {
+export async function getAgentReply(profile: RestaurantProfile, history: Turn[]): Promise<AgentReply> {
+  const reservations = await listReservations();
+
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 300,
-    system: buildSystemPrompt(),
+    system: buildSystemPrompt(profile, reservations),
     messages: history.map((t) => ({ role: t.role, content: t.content })),
   });
 

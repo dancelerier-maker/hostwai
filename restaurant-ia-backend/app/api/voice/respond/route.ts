@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { restaurantProfile } from "@/lib/restaurant";
+import { getRestaurantProfile } from "@/lib/restaurant";
 import { appendTurn, getConversation } from "@/lib/conversations";
 import { getAgentReply } from "@/lib/agent";
 import { gatherAndSay, sayAndHangup, sayAndTransfer } from "@/lib/twiml";
@@ -19,14 +19,16 @@ export async function POST(req: NextRequest) {
     return new NextResponse(twiml, { headers: { "Content-Type": "text/xml" } });
   }
 
-  appendTurn(callSid, { role: "user", content: speechResult });
-  const history = getConversation(callSid);
+  const restaurantProfile = await getRestaurantProfile();
 
-  const reply = await getAgentReply(history);
-  appendTurn(callSid, { role: "assistant", content: reply.spoken });
+  await appendTurn(callSid, { role: "user", content: speechResult });
+  const history = await getConversation(callSid);
+
+  const reply = await getAgentReply(restaurantProfile, history);
+  await appendTurn(callSid, { role: "assistant", content: reply.spoken });
 
   if (reply.reservation) {
-    addReservation(reply.reservation);
+    await addReservation(reply.reservation);
 
     // Confirmation au client — sur le numéro qui a appelé, capturé automatiquement par Twilio.
     sendSms(
@@ -43,7 +45,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  logCall({
+  await logCall({
     callSid,
     from,
     startedAt: new Date().toISOString(),

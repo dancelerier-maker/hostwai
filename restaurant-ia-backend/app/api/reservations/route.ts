@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { listReservations, listCalls } from "@/lib/store";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/reservations -> { reservations, calls }
-// The dashboard UI would poll this (or you'd swap it for a websocket/db
-// subscription) to show live data instead of the demo data it has today.
+// Lit maintenant Supabase au lieu des tableaux en mémoire — même forme de
+// réponse qu'avant, donc rien à changer côté dashboard.
 export async function GET() {
-  return NextResponse.json({
-    reservations: listReservations(),
-    calls: listCalls(),
-  });
+  const [reservations, calls] = await Promise.all([listReservations(), listCalls()]);
+  return NextResponse.json({ reservations, calls });
 }

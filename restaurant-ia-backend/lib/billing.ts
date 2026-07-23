@@ -1,58 +1,90 @@
 import { PLANS, PlanId, Plan } from "./plans";
+import { supabase, DEFAULT_RESTAURANT_ID } from "./supabaseClient";
 
-// Same in-memory caveat as the other lib/*.ts stores — swap for a database
-// row (keyed by restaurant/account) before going to production. In
-// particular, minutesUsedThisPeriod should reset every billing cycle
-// (a cron job or a check against the Stripe subscription's current period)
-// — here it just accumulates, fine for a single-restaurant prototype.
+// Remplace l'état en mémoire par la table `subscriptions`. Les constantes
+// (durée d'essai, tarifs des forfaits) restent dans le code, comme avant —
+// seul l'état mutable (secondes restantes/utilisées, abonnement actif) va en base.
 
 const TRIAL_SECONDS_TOTAL = 60 * 60; // 1 heure offerte avant de choisir un forfait
 
-let trialSecondsRemaining = TRIAL_SECONDS_TOTAL;
-let subscriptionActive = false;
-let currentPlan: PlanId | null = null;
-let secondsUsedThisPeriod = 0;
+type SubscriptionRow = {
+  trial_seconds_remaining: number;
+  seconds_used_this_period: number;
+  plan: PlanId | null;
+  subscription_active: boolean;
+};
 
-export function getBillingStatus() {
-  const plan: Plan | null = currentPlan ? PLANS[currentPlan] : null;
-  const minutesUsed = Math.ceil(secondsUsedThisPeriod / 60);
+async function getSubscriptionRow(): Promise<SubscriptionRow> {
+  const { data, error } = await supabase
+    .from("subscriptions")
+    .select("trial_seconds_remaining, seconds_used_this_period, plan, subscription_active")
+    .eq("restaurant_id", DEFAULT_RESTAURANT_ID)
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Impossible de charger l'abonnement : ${error?.message ?? "introuvable"}`);
+  }
+
+  return data as SubscriptionRow;
+}
+
+export async function getBillingStatus() {
+  const row = await getSubscriptionRow();
+  const plan: Plan | null = row.plan ? PLANS[row.plan] : null;
+  const minutesUsed = Math.ceil(row.seconds_used_this_period / 60);
   const includedMinutes = plan?.includedMinutes ?? null;
   const overageMinutes = includedMinutes !== null ? Math.max(0, minutesUsed - includedMinutes) : 0;
   const overageCost = plan?.overageRatePerMinute ? overageMinutes * plan.overageRatePerMinute : 0;
 
   return {
     trialSecondsTotal: TRIAL_SECONDS_TOTAL,
-    trialSecondsRemaining,
-    subscriptionActive,
-    currentPlan,
+    trialSecondsRemaining: row.trial_seconds_remaining,
+    subscriptionActive: row.subscription_active,
+    currentPlan: row.plan,
     planName: plan?.name ?? null,
     includedMinutes,
     minutesUsedThisPeriod: minutesUsed,
     overageMinutes,
     overageRatePerMinute: plan?.overageRatePerMinute ?? null,
     overageCostThisPeriod: Number(overageCost.toFixed(2)),
-    hasAccess: subscriptionActive || trialSecondsRemaining > 0,
+    hasAccess: row.subscription_active || row.trial_seconds_remaining > 0,
   };
 }
 
-// Called from the Twilio call-status webhook once a call actually completes,
-// with its real duration.
-export function consumeCallSeconds(seconds: number) {
-  if (subscriptionActive) {
-    secondsUsedThisPeriod += seconds;
+// Appelé depuis le webhook Twilio "Call status changes" une fois l'appel
+// terminé, avec sa durée réelle.
+export async function consumeCallSeconds(seconds: number): Promise<void> {
+  const row = await getSubscriptionRow();
+
+  if (row.subscription_active) {
+    await supabase
+      .from("subscriptions")
+      .update({ seconds_used_this_period: row.seconds_used_this_period + seconds })
+      .eq("restaurant_id", DEFAULT_RESTAURANT_ID);
   } else {
-    trialSecondsRemaining = Math.max(0, trialSecondsRemaining - seconds);
+    const remaining = Math.max(0, row.trial_seconds_remaining - seconds);
+    await supabase
+      .from("subscriptions")
+      .update({ trial_seconds_remaining: remaining })
+      .eq("restaurant_id", DEFAULT_RESTAURANT_ID);
   }
 }
 
-export function setSubscriptionActive(value: boolean, plan?: PlanId) {
-  subscriptionActive = value;
-  if (value && plan) currentPlan = plan;
-  if (!value) currentPlan = null;
+export async function setSubscriptionActive(value: boolean, plan?: PlanId): Promise<void> {
+  await supabase
+    .from("subscriptions")
+    .update({
+      subscription_active: value,
+      plan: value ? plan ?? null : null,
+    })
+    .eq("restaurant_id", DEFAULT_RESTAURANT_ID);
 }
 
-// For a real deploy: call this at the start of each Stripe billing period
-// (e.g. from an "invoice.created" webhook event) to reset the counter.
-export function resetPeriodUsage() {
-  secondsUsedThisPeriod = 0;
+// Pour un vrai déploiement : à appeler au début de chaque période de
+// facturation (webhook Stripe "invoice.created") pour remettre le compteur à zéro.
+export async function resetPeriodUsage(): Promise<void> {
+  await supabase
+    .from("subscriptions")
+    .update({ seconds_used_this_period: 0 })
+    .eq("restaurant_id", DEFAULT_RESTAURANT_ID);
 }
