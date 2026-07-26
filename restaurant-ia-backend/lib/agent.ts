@@ -1,9 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { listReservations } from "./store";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { RestaurantProfile } from "./restaurant";
+import { listReservations } from "./store";
 import type { Turn } from "./conversations";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 function buildSystemPrompt(profile: RestaurantProfile, reservations: Awaited<ReturnType<typeof listReservations>>): string {
   const list = reservations.length
@@ -40,17 +40,18 @@ export type AgentReply = {
 export async function getAgentReply(profile: RestaurantProfile, history: Turn[]): Promise<AgentReply> {
   const reservations = await listReservations();
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 300,
-    system: buildSystemPrompt(profile, reservations),
-    messages: history.map((t) => ({ role: t.role, content: t.content })),
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: buildSystemPrompt(profile, reservations),
   });
 
-  const raw = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("\n");
+  const contents = history.map((t) => ({
+    role: t.role === "assistant" ? "model" : "user",
+    parts: [{ text: t.content }],
+  }));
+
+  const result = await model.generateContent({ contents });
+  const raw = result.response.text();
 
   let spoken = raw;
   let reservation: AgentReply["reservation"] = null;
@@ -62,7 +63,7 @@ export async function getAgentReply(profile: RestaurantProfile, history: Turn[])
     try {
       reservation = JSON.parse(resMatch[1]);
     } catch {
-      // malformed JSON from the model — ignore, don't crash the call
+      // JSON malformé venant du modèle — on ignore, pas la peine de planter l'appel
     }
   }
 
