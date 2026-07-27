@@ -1,4 +1,4 @@
-// force redeploy
+// v2
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { RestaurantProfile } from "./restaurant";
 import { listReservations } from "./store";
