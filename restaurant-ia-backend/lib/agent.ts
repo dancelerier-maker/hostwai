@@ -42,7 +42,7 @@ export async function getAgentReply(profile: RestaurantProfile, history: Turn[])
   const reservations = await listReservations();
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+model: "gemini-3.5-flash-lite",
     systemInstruction: buildSystemPrompt(profile, reservations),
   });
 
