@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import { listReservations, listCalls } from "@/lib/store";
+import { getCurrentUser } from "@/lib/supabaseServerClient";
+import { getOrCreateRestaurantForUser } from "@/lib/supabaseClient";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/reservations -> { reservations, calls }
-// Lit maintenant Supabase au lieu des tableaux en mémoire — même forme de
-// réponse qu'avant, donc rien à changer côté dashboard.
 export async function GET() {
-  const [reservations, calls] = await Promise.all([listReservations(), listCalls()]);
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
+
+  const restaurantId = await getOrCreateRestaurantForUser(user.id, user.email ?? null);
+  const [reservations, calls] = await Promise.all([
+    listReservations(restaurantId),
+    listCalls(restaurantId),
+  ]);
   return NextResponse.json({ reservations, calls });
 }
