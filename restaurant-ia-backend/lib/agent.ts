@@ -1,4 +1,3 @@
-// v2
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { RestaurantProfile } from "./restaurant";
 import { listReservations } from "./store";
@@ -39,10 +38,10 @@ export type AgentReply = {
 };
 
 export async function getAgentReply(profile: RestaurantProfile, history: Turn[]): Promise<AgentReply> {
-  const reservations = await listReservations();
+  const reservations = await listReservations(profile.id);
 
   const model = genAI.getGenerativeModel({
-model: "gemini-3.5-flash-lite",
+    model: "gemini-3.5-flash-lite",
     systemInstruction: buildSystemPrompt(profile, reservations),
   });
 
